@@ -1,50 +1,46 @@
-# Use Ubuntu as the base image
-FROM ubuntu:22.04
+ARG UBUNTU_VERSION="20.04"
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-  build-essential \
-  cmake \
-  git \
-  python3 \
-  python3-pip \
-  zlib1g-dev \
-  libtinfo-dev \
-  curl \
-  libedit-dev \
-  llvm-14 \
-  clang-14 \
-  lld-14 \
-  ninja-build \
-  re2c \
-  && rm -rf /var/lib/apt/lists/*
+FROM ubuntu:${UBUNTU_VERSION}
 
-# Clone and install hiredis
-RUN git clone https://github.com/redis/hiredis.git /hiredis && \
-  cd /hiredis && \
-  make && \
-  make install && \
-  ldconfig && \
-  rm -rf /hiredis
+# Set environment variables for non-interactive setup and timezone
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Europe/Vienna 
 
-# Set environment variables
-ENV LLVM_VERSION=14
-ENV PATH="/usr/lib/llvm-${LLVM_VERSION}/bin:${PATH}"
+# Define package version as an argument. Default 12
+ARG PACKAGE_VERSION="12"
 
-# Clone Alive2 repository
-RUN git clone https://github.com/AliveToolkit/alive2.git /alive2
+RUN apt-get update && \
+    apt-get install -y \
+    build-essential \
+    git \
+    llvm-${PACKAGE_VERSION} \
+    clang-${PACKAGE_VERSION} \
+    llvm-${PACKAGE_VERSION}-tools \
+    lldb-${PACKAGE_VERSION} \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create build directory and build Alive2
-WORKDIR /alive2
-RUN mkdir build && cd build && \
-  cmake -GNinja .. && \
-  ninja
+# Set up symbolic links for tools
+RUN for tool in $(find /usr/bin \
+    -name "llvm-*${PACKAGE_VERSION}" \
+    -o -name "clang-${PACKAGE_VERSION}" \
+    -o -name "opt-${PACKAGE_VERSION}" \
+    -o -name "lli-${PACKAGE_VERSION}"\
+    ); \
+    do ln -s "$tool" "/usr/bin/$(basename "$tool" -${PACKAGE_VERSION})"; \
+    done
 
-# Set Alive2 bin directory in PATH
-ENV PATH="/alive2/build:${PATH}"
+# NOTE: `tigress_4.0.7-1_all.deb` can be downloaded in https://tigress.wtf/tigress-download.html
+COPY tigress_4.0.7-1_all.deb tigress-installer.deb
+RUN dpkg --force-architecture -i tigress-installer.deb
+# Link tigress.h globally
+RUN ln -s "/usr/local/bin/tigresspkg/4.0.7/tigress.h" "/usr/local/include/tigress.h" # Change 4.0.7 to correct installed version
 
-# Set a working directory inside the container for your scripts
-WORKDIR /scripts
+# Copy Makefile from host machine to root of OS
+COPY Makefile /
 
-# Set up entrypoint for running the compiler easily
-ENTRYPOINT ["/alive2/build/alive-tv"]
+ENV MAKEFILES=/Makefile
+
+# Set the working directory
+WORKDIR /workspace
+
+ENTRYPOINT ["/bin/bash", "-c", "echo 'LLVM:' $(llvm-config --version) && echo '\nclang:' $(clang --version) '\n' && tigress --Version && echo '\n' && exec /bin/bash"]

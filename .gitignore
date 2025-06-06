@@ -1,0 +1,10 @@
+.DS_Store
+
+# demo files in all kind of extensions
+demo.*
+
+*.ll
+*.tigress.*
+!*.save.*
+
+.vscode
